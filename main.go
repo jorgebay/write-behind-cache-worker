@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"os/signal"
+	"syscall"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/jorgebay/write-behind-cache-worker/internal/config"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
@@ -15,21 +17,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 
-	ctx := context.Background()
-	db, err := sql.Open(cfg.Db.DriverName, cfg.Db.ConnectionString)
+	db, err := sqlx.Connect(cfg.Db.DriverName, cfg.Db.ConnectionString)
 	if err != nil {
 		panic(err)
 	}
 	defer db.Close()
 
-	if err := db.Ping(); err != nil {
-		panic(err)
-	}
-
 	fmt.Println("Connected to db")
 
-	opts, err := redis.ParseURL(cfg.RedisUrl)
+	opts, err := redis.ParseURL(cfg.Redis.Url)
 	if err != nil {
 		panic(err)
 	}

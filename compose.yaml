@@ -1,13 +1,13 @@
 version: '3.5'
 
-# Services for testing the application
+# Services for testing and running the application locally
 services:
   redis:
     image: redis:7.4
     ports:
       - "6379:6379"
   db:
-    image: postgres:13.4
+    image: postgres:15
     command: ["postgres", "-c", "log_statement=all", "-c", "log_destination=stderr"]
     ports:
       - "5432:5432"
