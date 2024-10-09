@@ -18,6 +18,15 @@ type Runner struct {
 	logger      *zap.Logger
 }
 
+func NewRunner(cfg *config.Config, db *sqlx.DB, redisClient *redis.Client, logger *zap.Logger) *Runner {
+	return &Runner{
+		cfg:         cfg,
+		db:          db,
+		redisClient: redisClient,
+		logger:      logger,
+	}
+}
+
 func (r *Runner) Run(ctx context.Context) error {
 	redisCursorDefaultValue := r.redisClient.Get(ctx, r.cfg.Redis.CursorKey)
 	cursorInfo, err := r.cfg.Db.Cursor.Info(redisCursorDefaultValue.Val())
@@ -45,7 +54,8 @@ func (r *Runner) Run(ctx context.Context) error {
 			// continue
 		}
 
-		r.logger.Debug("running db query", zap.Any("cursorValue", cursorValue))
+		r.logger.Debug("running db query",
+			zap.Any("cursorValue", cursorValue), zap.String("query", r.cfg.Db.SelectQuery))
 		rows, err := r.db.Queryx(r.cfg.Db.SelectQuery, cursorValue)
 		if err != nil {
 			return err

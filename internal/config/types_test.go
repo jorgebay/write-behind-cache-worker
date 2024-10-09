@@ -49,7 +49,7 @@ var _ = Describe("RedisConfig", func() {
 
 	Describe("ValueFn()", func() {
 		tests := []struct {
-			text      string
+			text     string
 			value    any
 			expected any
 		}{

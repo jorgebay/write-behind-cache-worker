@@ -71,6 +71,23 @@ var _ = Describe("Runner", func() {
 				expectRedisValues(ctx, "my-worker:3000:key", "6")
 			})
 		})
+
+		Context("with uuid table", func() {
+
+			It("should read", func() {
+				runner.cfg.Db.Cursor.Default = "00000000-0000-7300-8f14-e6ee9ef0c3f1"
+				runner.cfg.Db.Cursor.Type = "uuid"
+				runner.cfg.Db.SelectQuery = "SELECT MAX(id::text) as id, partition_key::text FROM uuid_table WHERE id > $1 GROUP BY partition_key"
+				runner.cfg.Redis.CursorKey = "my-worker:latest-uuid"
+				redisClient.Del(ctx, runner.cfg.Redis.CursorKey)
+
+				err := runner.Run(ctx)
+				Expect(err).NotTo(HaveOccurred())
+
+				expectRedisValues(ctx, "my-worker:8afb5e31-d8a6-4d92-b964-6ad8cc296050:key", "01926cc6-6430-7359-8ba1-02f348b55d36")
+				expectRedisValues(ctx, "my-worker:65e6690c-80a6-4c76-95c7-2bbb686e4074:key", "01926cc4-cece-72d3-b801-abcb74b68556")
+			})
+		})
 	})
 })
 

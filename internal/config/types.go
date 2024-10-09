@@ -16,12 +16,13 @@ type Config struct {
 	Redis     RedisConfig   `yaml:"redis" env-prefix:"WORKER_REDIS_"`
 	Db        DbConfig      `yaml:"db" env-prefix:"WORKER_DB_"`
 	PollDelay time.Duration `yaml:"pollDelay" env:"WORKER_POLL_DELAY" env-default:"2s"`
+	Debug     bool          `yaml:"debug" env:"WORKER_DEBUG" env-default:"false"`
 }
 
 type DbConfig struct {
 	ConnectionString string       `yaml:"connectionString" env:"CONNECTION_STRING" env-default:"host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"`
 	DriverName       string       `yaml:"driverName" env:"DRIVER_NAME" env-default:"postgres"`
-	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY"`
+	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY" env-default:"SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"`
 	Cursor           CursorConfig `yaml:"cursor" env-prefix:"CURSOR_"`
 }
 
