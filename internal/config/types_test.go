@@ -19,11 +19,11 @@ var _ = Describe("RedisConfig", func() {
 	logger, err := zap.NewDevelopment()
 	Expect(err).NotTo(HaveOccurred())
 	row := map[string]any{
-		"id": 1,
+		"id":    1,
 		"hello": "world",
 	}
 
-	Describe("KeyFn()", func ()  {
+	Describe("KeyFn()", func() {
 		It("should fail if no columns are found in key", func() {
 			c := RedisConfig{Key: "worker"}
 			_, err := c.KeyFn(logger)
@@ -47,12 +47,12 @@ var _ = Describe("RedisConfig", func() {
 		}
 	})
 
-	Describe("ValueFn()", func ()  {
-		tests := []struct{
-			key string
-			value any
+	Describe("ValueFn()", func() {
+		tests := []struct {
+			key      string
+			value    any
 			expected any
-		} {
+		}{
 			{"${id}", 1, 1}, // It returns the same type
 			{"${hello}", "world", "world"},
 			{"worker:${id}:${hello}", 1, "worker:1:world"},

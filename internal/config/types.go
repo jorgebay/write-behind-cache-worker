@@ -15,7 +15,7 @@ var parameterRegex = regexp.MustCompile(`\$\{(.+?)\}`)
 type Config struct {
 	Redis     RedisConfig   `yaml:"redis" env-prefix:"WORKER_REDIS_"`
 	Db        DbConfig      `yaml:"db" env-prefix:"WORKER_DB_"`
-	PollDelay time.Duration `yaml:"pollDelay" env:"WORKER_POLL_DELAY" env-default:"5s"`
+	PollDelay time.Duration `yaml:"pollDelay" env:"WORKER_POLL_DELAY" env-default:"2s"`
 }
 
 type DbConfig struct {
@@ -26,20 +26,21 @@ type DbConfig struct {
 }
 
 type RedisConfig struct {
-	Url   string `yaml:"url" env:"URL" env-default:"redis://localhost:6379"`
-	Key   string `yaml:"key" env:"KEY" env-default:"my-worker:${partition_id}:latest"`
-	Value string `yaml:"value" env:"VALUE" env-default:"${id}"`
+	Url       string `yaml:"url" env:"URL" env-default:"redis://localhost:6379"`
+	Key       string `yaml:"key" env:"KEY" env-default:"my-worker:${partition_key}:key"`
+	Value     string `yaml:"value" env:"VALUE" env-default:"${id}"`
+	CursorKey string `yaml:"cursorKey" env:"CURSOR_KEY" env-default:"my-worker:latest"`
 }
 
 type CursorConfig struct {
 	Column  string `yaml:"column" env:"COLUMN" env-default:"id"`
 	Type    string `yaml:"type" env:"TYPE" env-default:"int64"`
-	Default string `yaml:"default" env:"DEFAULT"`
+	Default string `yaml:"default" env:"DEFAULT" env-default:"-1"`
 }
 
 type ComparatorFunc func(a, b any) (int, error)
-type KeyFunc func(row map[string]any) (string, error)
-type ValueFunc func(row map[string]any) (any, error)
+type KeyFunc func(row map[string]any) string
+type ValueFunc func(row map[string]any) any
 
 func (c *RedisConfig) KeyFn(logger *zap.Logger) (KeyFunc, error) {
 	formatString, columnNames, err := parseColumns(c.Key)
@@ -49,29 +50,29 @@ func (c *RedisConfig) KeyFn(logger *zap.Logger) (KeyFunc, error) {
 
 	logger.Info("Using redis key", zap.String("key", formatString), zap.Any("columnNames", columnNames))
 
-	return func(row map[string]any) (string, error) {
+	return func(row map[string]any) string {
 		args := make([]any, 0, len(columnNames))
 		for _, name := range columnNames {
 			value := row[name]
 			args = append(args, value)
 		}
 
-		return fmt.Sprintf(formatString, args...), nil
+		return fmt.Sprintf(formatString, args...)
 	}, nil
 }
 
 func (c *RedisConfig) ValueFn(logger *zap.Logger) (ValueFunc, error) {
-	formatString, columnNames, err := parseColumns(c.Key)
+	formatString, columnNames, err := parseColumns(c.Value)
 	if err != nil {
 		return nil, fmt.Errorf("no parameters found in key/value: %s", c.Key)
 	}
 
 	logger.Info("Using redis value", zap.String("value", formatString), zap.Any("columnNames", columnNames))
 
-	return func(row map[string]any) (any, error) {
+	return func(row map[string]any) any {
 		if len(columnNames) == 1 && formatString == "%v" {
 			// Use the same type
-			return row[columnNames[0]], nil
+			return row[columnNames[0]]
 		}
 
 		args := make([]any, 0, len(columnNames))
@@ -80,7 +81,7 @@ func (c *RedisConfig) ValueFn(logger *zap.Logger) (ValueFunc, error) {
 			args = append(args, value)
 		}
 
-		return fmt.Sprintf(formatString, args...), nil
+		return fmt.Sprintf(formatString, args...)
 	}, nil
 }
 
@@ -107,8 +108,12 @@ func parseColumns(text string) (string, []string, error) {
 	return formatString, columnNames, nil
 }
 
-func (c *CursorConfig) Info() (*CursorInfo, error) {
-	defaultValue, compareFunc, err := toDbType(c.Default, c.Type)
+func (c *CursorConfig) Info(backendDefault string) (*CursorInfo, error) {
+	defaultValueString := c.Default
+	if backendDefault != "" {
+		defaultValueString = backendDefault
+	}
+	defaultValue, compareFunc, err := toDbType(defaultValueString, c.Type)
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert default value: %w", err)
 	}

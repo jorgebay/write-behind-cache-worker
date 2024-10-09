@@ -2,8 +2,13 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/jmoiron/sqlx"
 	"github.com/jorgebay/write-behind-cache-worker/internal/config"
 	_ "github.com/lib/pq"
@@ -19,45 +24,115 @@ func TestRunner(t *testing.T) {
 }
 
 var runner *Runner
+var redisClient *redis.Client
+var db *sqlx.DB
+
+var _ = Describe("Runner", func() {
+	Describe("Run", func() {
+		ctx := context.WithValue(context.Background(), "test-max-iterations", 2)
+
+		Context("with sample table", func() {
+			BeforeEach(func() {
+				deleteFrom("sample_table", 4)
+			})
+
+			It("should start from the default value", func() {
+				redisClient.Del(ctx, runner.cfg.Redis.CursorKey)
+				err := runner.Run(ctx)
+				Expect(err).NotTo(HaveOccurred())
+
+				expectRedisValues(ctx, "my-worker:1000:key", "2")
+				expectRedisValues(ctx, "my-worker:2000:key", "3")
+			})
+
+			It("should continue from the cached cursor value", func() {
+				// Delete the previous values and set the cursor
+				clearRedisValues(ctx, "my-worker:1000:key", "my-worker:2000:key")
+				redisClient.Set(ctx, runner.cfg.Redis.CursorKey, "2", 0)
+
+				err := runner.Run(ctx)
+				Expect(err).NotTo(HaveOccurred())
+
+				expectRedisValues(ctx, "my-worker:2000:key", "3")
+				expectRedisValuesNotFound(ctx, "my-worker:1000:key")
+			})
+
+			It("should add newer data", func() {
+				redisClient.Set(ctx, runner.cfg.Redis.CursorKey, "3", 0)
+				insert("sample_table", 6, 3000)
+				insert("sample_table", 4, 2000)
+				insert("sample_table", 5, 1000)
+
+				err := runner.Run(ctx)
+				Expect(err).NotTo(HaveOccurred())
+
+				expectRedisValues(ctx, "my-worker:1000:key", "5")
+				expectRedisValues(ctx, "my-worker:2000:key", "4")
+				expectRedisValues(ctx, "my-worker:3000:key", "6")
+			})
+		})
+	})
+})
+
+func expectRedisValues(ctx context.Context, key string, expected string) {
+	result := redisClient.Get(ctx, key)
+	Expect(result.Err()).NotTo(HaveOccurred(), "redis error for key %s", key)
+	Expect(result.Val()).To(Equal(expected), "redis value for key %s", key)
+}
+
+func expectRedisValuesNotFound(ctx context.Context, keys ...string) {
+	result := redisClient.Exists(ctx, keys...)
+	Expect(result.Val()).To(Equal(int64(0)))
+}
+
+func insert(table string, id, partitionKey any) {
+	query := fmt.Sprintf("INSERT INTO %s (id, partition_key) VALUES ($1, $2) ON CONFLICT DO NOTHING", table)
+	_, err := db.Queryx(query, id, partitionKey)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func deleteFrom(table string, id any) {
+	query := fmt.Sprintf("DELETE FROM %s WHERE id >= $1", table)
+	_, err := db.Queryx(query, id)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func clearRedisValues(ctx context.Context, keys ...string) {
+	redisClient.Del(ctx, keys...)
+}
 
 var _ = BeforeSuite(func() {
-	db, err := sqlx.Connect(
-		"postgres", "host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable")
+	var cfg config.Config
+	var err error
+
+	cleanenv.ReadEnv(&cfg)
+	cfg.Db.SelectQuery = "SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"
+	cfg.PollDelay = 0
+
+	db, err = sqlx.Connect(cfg.Db.DriverName, cfg.Db.ConnectionString)
 	Expect(err).NotTo(HaveOccurred())
 
 	opts, err := redis.ParseURL("redis://localhost:6379")
 	Expect(err).NotTo(HaveOccurred())
 
-	redisClient := redis.NewClient(opts)
+	redisClient = redis.NewClient(opts)
 	redisStatus := redisClient.Ping(context.Background())
 	Expect(redisStatus.Err()).NotTo(HaveOccurred())
 
 	logger, err := zap.NewDevelopment()
 	Expect(err).NotTo(HaveOccurred())
 
+	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	migrator, err := migrate.NewWithDatabaseInstance("file://test/migrations", "postgres", driver)
+	err = migrator.Up()
+	if err != migrate.ErrNoChange {
+		Expect(err).NotTo(HaveOccurred())
+	}
+
 	runner = &Runner{
-		cfg: &config.Config{
-			Db: config.DbConfig{
-				SelectQuery: "SELECT MAX(id) as id, partition_id FROM sample_table WHERE id > $1 GROUP BY partition_id",
-				Cursor: config.CursorConfig{
-					Column:  "id",
-					Type:    "int64",
-					Default: "-1",
-				},
-			},
-		},
+		cfg:         &cfg,
 		db:          db,
 		redisClient: redisClient,
 		logger:      logger,
 	}
-})
-
-var _ = Describe("Runner", func() {
-	Describe("Run", func() {
-		It("should return nil", func() {
-			ctx := context.WithValue(context.Background(), "test-max-iterations", 2)
-			err := runner.Run(ctx)
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
 })

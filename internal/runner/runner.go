@@ -19,13 +19,21 @@ type Runner struct {
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	cursorInfo, err := r.cfg.Db.Cursor.Info()
+	redisCursorDefaultValue := r.redisClient.Get(ctx, r.cfg.Redis.CursorKey)
+	cursorInfo, err := r.cfg.Db.Cursor.Info(redisCursorDefaultValue.Val())
 	if err != nil {
 		return err
 	}
 
-	// TODO: get from redis key
 	cursorValue := cursorInfo.Default
+	keyFn, err := r.cfg.Redis.KeyFn(r.logger)
+	if err != nil {
+		return err
+	}
+	valueFn, err := r.cfg.Redis.ValueFn(r.logger)
+	if err != nil {
+		return err
+	}
 	compareFunc := cursorInfo.CompareFunc
 	shouldStop := r.shouldStopFn(ctx)
 
@@ -58,8 +66,16 @@ func (r *Runner) Run(ctx context.Context) error {
 			if comparison < 0 {
 				cursorValue = m[cursorInfo.Column]
 			}
+
+			key := keyFn(m)
+			value := valueFn(m)
+			r.logger.Debug("setting cache", zap.String("key", key), zap.Any("value", value))
+			r.redisClient.Set(ctx, key, value, 0)
 		}
 		rows.Close()
+
+		r.logger.Debug("setting cursor", zap.Any("cursorValue", cursorValue))
+		r.redisClient.Set(ctx, r.cfg.Redis.CursorKey, fmt.Sprint(cursorValue), 0)
 
 		select {
 		case <-ctx.Done():
