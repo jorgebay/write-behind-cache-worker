@@ -49,7 +49,7 @@ var _ = Describe("RedisConfig", func() {
 
 	Describe("ValueFn()", func() {
 		tests := []struct {
-			key      string
+			text      string
 			value    any
 			expected any
 		}{
@@ -60,8 +60,8 @@ var _ = Describe("RedisConfig", func() {
 		}
 
 		for _, test := range tests {
-			It(fmt.Sprintf("should return a function that parses a value for %s", test.key), func() {
-				c := RedisConfig{Key: test.key}
+			It(fmt.Sprintf("should return a function that parses a value for %s", test.text), func() {
+				c := RedisConfig{Value: test.text}
 				fn, err := c.ValueFn(logger)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(fn(row)).To(Equal(test.expected))

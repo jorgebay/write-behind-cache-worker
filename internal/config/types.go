@@ -45,7 +45,7 @@ type ValueFunc func(row map[string]any) any
 func (c *RedisConfig) KeyFn(logger *zap.Logger) (KeyFunc, error) {
 	formatString, columnNames, err := parseColumns(c.Key)
 	if err != nil {
-		return nil, fmt.Errorf("no parameters found in key/value: %s", c.Key)
+		return nil, err
 	}
 
 	logger.Info("Using redis key", zap.String("key", formatString), zap.Any("columnNames", columnNames))
@@ -64,7 +64,7 @@ func (c *RedisConfig) KeyFn(logger *zap.Logger) (KeyFunc, error) {
 func (c *RedisConfig) ValueFn(logger *zap.Logger) (ValueFunc, error) {
 	formatString, columnNames, err := parseColumns(c.Value)
 	if err != nil {
-		return nil, fmt.Errorf("no parameters found in key/value: %s", c.Key)
+		return nil, err
 	}
 
 	logger.Info("Using redis value", zap.String("value", formatString), zap.Any("columnNames", columnNames))
