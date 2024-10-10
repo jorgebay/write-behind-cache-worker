@@ -80,7 +80,6 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 
 		totalRows := 0
-
 		redisPipeline := r.redisClient.Pipeline()
 
 		for rows.Next() {
