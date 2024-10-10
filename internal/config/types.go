@@ -17,17 +17,18 @@ type Config struct {
 	Db        DbConfig      `yaml:"db" env-prefix:"WORKER_DB_"`
 	PollDelay time.Duration `yaml:"pollDelay" env:"WORKER_POLL_DELAY" env-default:"2s"`
 	Debug     bool          `yaml:"debug" env:"WORKER_DEBUG" env-default:"false"`
+	BatchSize int           `yaml:"batchSize" env:"WORKER_BATCH_SIZE" env-default:"200"`
 }
 
 type DbConfig struct {
-	ConnectionString string       `yaml:"connectionString" env:"CONNECTION_STRING" env-default:"host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"`
+	ConnectionString string       `yaml:"connectionString" env:"CONNECTION_STRING" env-default:"host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"` //revive:disable
 	DriverName       string       `yaml:"driverName" env:"DRIVER_NAME" env-default:"postgres"`
-	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY" env-default:"SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"`
+	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY" env-default:"SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"` //revive:disable
 	Cursor           CursorConfig `yaml:"cursor" env-prefix:"CURSOR_"`
 }
 
 type RedisConfig struct {
-	Url       string `yaml:"url" env:"URL" env-default:"redis://localhost:6379"`
+	URL       string `yaml:"url" env:"URL" env-default:"redis://localhost:6379"`
 	Key       string `yaml:"key" env:"KEY" env-default:"my-worker:${partition_key}:key"`
 	Value     string `yaml:"value" env:"VALUE" env-default:"${id}"`
 	CursorKey string `yaml:"cursorKey" env:"CURSOR_KEY" env-default:"my-worker:latest"`

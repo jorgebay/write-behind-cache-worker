@@ -25,3 +25,5 @@ go.work.sum
 .env
 
 /write-behind-cache-worker
+
+/*.yml

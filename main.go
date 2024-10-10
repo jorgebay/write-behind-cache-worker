@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os/signal"
 	"syscall"
@@ -15,8 +16,12 @@ import (
 	"go.uber.org/zap"
 )
 
+var configFlag = flag.String("c", "config.yaml", "help message for flag n")
+
 func main() {
-	cfg, err := config.Load("config.yml")
+	flag.Parse()
+
+	cfg, cgfFileExists, err := config.Load(*configFlag)
 	if err != nil {
 		panic(fmt.Sprintf("unable to load config: %s", err))
 	}
@@ -31,6 +36,10 @@ func main() {
 		panic(err)
 	}
 
+	if cgfFileExists {
+		logger.Info("using config file", zap.String("file", *configFlag))
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
@@ -42,7 +51,7 @@ func main() {
 
 	logger.Info("connected to db")
 
-	opts, err := redis.ParseURL(cfg.Redis.Url)
+	opts, err := redis.ParseURL(cfg.Redis.URL)
 	if err != nil {
 		logger.Fatal("unable to parse redis url", zap.Error(err))
 	}
@@ -55,8 +64,8 @@ func main() {
 
 	logger.Info("connected to redis")
 
-	runner := runner.NewRunner(cfg, db, client, logger)
-	err = runner.Run(ctx)
+	r := runner.NewRunner(cfg, db, client, logger)
+	err = r.Run(ctx)
 	logger.Info("runner shutting down")
 	if err != nil && !errors.Is(err, context.Canceled) {
 		logger.Warn("runner ended in error", zap.Error(err))

@@ -44,7 +44,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 	compareFunc := cursorInfo.CompareFunc
-	shouldStop := r.shouldStopFn(ctx)
+	shouldStop := shouldStopFn(ctx)
 
 	for i := 0; !shouldStop(i); i++ {
 		select {
@@ -54,12 +54,16 @@ func (r *Runner) Run(ctx context.Context) error {
 			// continue
 		}
 
-		r.logger.Debug("running db query",
-			zap.Any("cursorValue", cursorValue), zap.String("query", r.cfg.Db.SelectQuery))
-		rows, err := r.db.Queryx(r.cfg.Db.SelectQuery, cursorValue)
+		r.logger.Debug("running db query", zap.Any("cursorValue", cursorValue))
+		rows, err := r.db.QueryxContext(ctx, r.cfg.Db.SelectQuery, cursorValue)
 		if err != nil {
+			r.logger.Error("unable to query db", zap.Error(err), zap.String("query", r.cfg.Db.SelectQuery))
 			return err
 		}
+
+		totalRows := 0
+
+		redisPipeline := r.redisClient.Pipeline()
 
 		for rows.Next() {
 			m := make(map[string]any)
@@ -68,24 +72,40 @@ func (r *Runner) Run(ctx context.Context) error {
 				return fmt.Errorf("unable to map scan: %w", err)
 			}
 
-			comparison, err := compareFunc(cursorValue, m[cursorInfo.Column])
+			currentCursorValue := m[cursorInfo.Column]
+			if currentCursorValue == nil {
+				return fmt.Errorf("cursor column '%s' is nil or does not exists", cursorInfo.Column)
+			}
+
+			comparison, err := compareFunc(cursorValue, currentCursorValue)
 			if err != nil {
-				return fmt.Errorf("unable to compare %v and %v: %w", cursorValue, m[cursorInfo.Column], err)
+				return fmt.Errorf("unable to compare %v and %v: %w", cursorValue, currentCursorValue, err)
 			}
 
 			if comparison < 0 {
-				cursorValue = m[cursorInfo.Column]
+				cursorValue = currentCursorValue
 			}
 
 			key := keyFn(m)
 			value := valueFn(m)
-			r.logger.Debug("setting cache", zap.String("key", key), zap.Any("value", value))
-			r.redisClient.Set(ctx, key, value, 0)
+			r.logger.Debug("setting key", zap.String("key", key), zap.Any("value", value))
+			redisPipeline.Set(ctx, key, value, 0)
+			totalRows++
 		}
-		rows.Close()
 
-		r.logger.Debug("setting cursor", zap.Any("cursorValue", cursorValue))
-		r.redisClient.Set(ctx, r.cfg.Redis.CursorKey, fmt.Sprint(cursorValue), 0)
+		if totalRows > 0 {
+			r.logger.Info("processed rows", zap.Int("rows", totalRows))
+			if totalRows == r.cfg.BatchSize {
+				r.logger.Warn("batch size reached, consider incrementing the execution rate",
+					zap.Int("batchSize", r.cfg.BatchSize))
+			}
+
+			r.logger.Debug("setting cursor", zap.Any("cursorValue", cursorValue))
+			redisPipeline.Set(ctx, r.cfg.Redis.CursorKey, fmt.Sprint(cursorValue), 0)
+			redisPipeline.Exec(ctx)
+		}
+
+		rows.Close()
 
 		select {
 		case <-ctx.Done():
@@ -98,7 +118,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) shouldStopFn(ctx context.Context) func(int) bool {
+func shouldStopFn(ctx context.Context) func(int) bool {
 	maxIterations := ctx.Value("test-max-iterations")
 	if maxIterations != nil {
 		maxIterationsInt, ok := maxIterations.(int)
