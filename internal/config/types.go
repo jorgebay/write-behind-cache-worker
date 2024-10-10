@@ -41,6 +41,7 @@ type CursorConfig struct {
 }
 
 type ComparatorFunc func(a, b any) (int, error)
+type ConvertFunc func(value string) (any, error)
 type KeyFunc func(row map[string]any) string
 type ValueFunc func(row map[string]any) any
 
@@ -110,20 +111,23 @@ func parseColumns(text string) (string, []string, error) {
 	return formatString, columnNames, nil
 }
 
-func (c *CursorConfig) Info(backendDefault string) (*CursorInfo, error) {
-	defaultValueString := c.Default
-	if backendDefault != "" {
-		defaultValueString = backendDefault
+func (c *CursorConfig) Info() (*CursorInfo, error) {
+	convertFunc, compareFunc, err := toDBTypeFuncs(c.Type)
+	if err != nil {
+		return nil, err
 	}
-	defaultValue, compareFunc, err := toDbType(defaultValueString, c.Type)
+
+	defaultValue, err := convertFunc(c.Default)
 	if err != nil {
 		return nil, fmt.Errorf("unable to convert default value: %w", err)
 	}
+
 	return &CursorInfo{
 		Column:      c.Column,
 		Type:        c.Type,
 		Default:     defaultValue,
 		CompareFunc: compareFunc,
+		ConvertFunc: convertFunc,
 	}, nil
 }
 
@@ -132,23 +136,31 @@ type CursorInfo struct {
 	Type        string
 	Default     any
 	CompareFunc ComparatorFunc
+	ConvertFunc ConvertFunc
 }
 
-func toDbType(value string, dbType string) (any, ComparatorFunc, error) {
+func toDBTypeFuncs(dbType string) (ConvertFunc, ComparatorFunc, error) {
 	switch dbType {
 	case "int64":
-		i, err := strconv.ParseInt(value, 10, 64)
-		return i, getCompareFunc[int64](), err
+		return func(value string) (any, error) {
+			return strconv.ParseInt(value, 10, 64)
+		}, getCompareFunc[int64](), nil
 	case "int32":
-		i, err := strconv.ParseInt(value, 10, 32)
-		return int32(i), getCompareFunc[int32](), err
+		return func(value string) (any, error) {
+			return strconv.ParseInt(value, 10, 32)
+		}, getCompareFunc[int64](), nil
 	case "int":
-		i, err := strconv.Atoi(value)
-		return i, getCompareFunc[int](), err
+		return func(value string) (any, error) {
+			return strconv.Atoi(value)
+		}, getCompareFunc[int](), nil
 	case "string":
-		return value, getCompareFunc[string](), nil
+		return func(value string) (any, error) {
+			return value, nil
+		}, getCompareFunc[string](), nil
 	case "uuid":
-		return value, getCompareFunc[string](), nil
+		return func(value string) (any, error) {
+			return value, nil
+		}, getCompareFunc[string](), nil
 	}
 
 	return nil, nil, fmt.Errorf("unsupported type: %s", dbType)

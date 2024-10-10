@@ -27,14 +27,27 @@ func NewRunner(cfg *config.Config, db *sqlx.DB, redisClient *redis.Client, logge
 	}
 }
 
-func (r *Runner) Run(ctx context.Context) error {
+func (r *Runner) cursorValue(ctx context.Context, cursorInfo *config.CursorInfo) (result any, err error) {
 	redisCursorDefaultValue := r.redisClient.Get(ctx, r.cfg.Redis.CursorKey)
-	cursorInfo, err := r.cfg.Db.Cursor.Info(redisCursorDefaultValue.Val())
+	if redisCursorDefaultValue.Val() != "" {
+		result, err = cursorInfo.ConvertFunc(redisCursorDefaultValue.Val())
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert redis cursor value to db type: %w", err)
+		}
+	}
+	if result == nil {
+		result = cursorInfo.Default
+	}
+
+	return result, nil
+}
+
+func (r *Runner) Run(ctx context.Context) error {
+	cursorInfo, err := r.cfg.Db.Cursor.Info()
 	if err != nil {
 		return err
 	}
 
-	cursorValue := cursorInfo.Default
 	keyFn, err := r.cfg.Redis.KeyFn(r.logger)
 	if err != nil {
 		return err
@@ -52,6 +65,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		default:
 			// continue
+		}
+
+		cursorValue, err := r.cursorValue(ctx, cursorInfo)
+		if err != nil {
+			return err
 		}
 
 		r.logger.Debug("running db query", zap.Any("cursorValue", cursorValue))
@@ -72,18 +90,18 @@ func (r *Runner) Run(ctx context.Context) error {
 				return fmt.Errorf("unable to map scan: %w", err)
 			}
 
-			currentCursorValue := m[cursorInfo.Column]
-			if currentCursorValue == nil {
+			nextCursorValue := m[cursorInfo.Column]
+			if nextCursorValue == nil {
 				return fmt.Errorf("cursor column '%s' is nil or does not exists", cursorInfo.Column)
 			}
 
-			comparison, err := compareFunc(cursorValue, currentCursorValue)
+			comparison, err := compareFunc(cursorValue, nextCursorValue)
 			if err != nil {
-				return fmt.Errorf("unable to compare %v and %v: %w", cursorValue, currentCursorValue, err)
+				return fmt.Errorf("unable to compare %v and %v: %w", cursorValue, nextCursorValue, err)
 			}
 
 			if comparison < 0 {
-				cursorValue = currentCursorValue
+				cursorValue = nextCursorValue
 			}
 
 			key := keyFn(m)
@@ -102,7 +120,10 @@ func (r *Runner) Run(ctx context.Context) error {
 
 			r.logger.Debug("setting cursor", zap.Any("cursorValue", cursorValue))
 			redisPipeline.Set(ctx, r.cfg.Redis.CursorKey, fmt.Sprint(cursorValue), 0)
-			redisPipeline.Exec(ctx)
+			_, err := redisPipeline.Exec(ctx)
+			if err != nil {
+				return fmt.Errorf("unable to set cursor value: %w", err)
+			}
 		}
 
 		rows.Close()
