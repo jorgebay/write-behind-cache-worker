@@ -6,6 +6,10 @@ start:
 stop:
 	docker compose down
 
+.PHONY: stop-db
+stop-db:
+	docker-compose rm -s -v -f db
+
 .PHONY: run
 run:
 	go run .
