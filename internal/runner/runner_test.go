@@ -29,7 +29,7 @@ var db *sqlx.DB
 
 var _ = Describe("Runner", func() {
 	Describe("Run", func() {
-		ctx := context.WithValue(context.Background(), "test-max-iterations", 2)
+		ctx := context.WithValue(context.Background(), ctxKey("test-max-iterations"), 2)
 
 		Context("with sample table", func() {
 			BeforeEach(func() {
@@ -124,9 +124,9 @@ func clearRedisValues(ctx context.Context, keys ...string) {
 
 var _ = BeforeSuite(func() {
 	var cfg config.Config
-	var err error
 
-	cleanenv.ReadEnv(&cfg)
+	err := cleanenv.ReadEnv(&cfg)
+	Expect(err).NotTo(HaveOccurred())
 	cfg.Db.SelectQuery = "SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"
 	cfg.PollDelay = 0
 
@@ -144,7 +144,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	Expect(err).NotTo(HaveOccurred())
 	migrator, err := migrate.NewWithDatabaseInstance("file://test/migrations", "postgres", driver)
+	Expect(err).NotTo(HaveOccurred())
 	err = migrator.Up()
 	if err != migrate.ErrNoChange {
 		Expect(err).NotTo(HaveOccurred())
