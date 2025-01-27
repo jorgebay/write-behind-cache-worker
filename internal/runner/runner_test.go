@@ -23,9 +23,11 @@ func TestRunner(t *testing.T) {
 	RunSpecs(t, "Runner Suite")
 }
 
-var runner *Runner
-var redisClient *redis.Client
-var db *sqlx.DB
+var (
+	runner      *Runner
+	redisClient *redis.Client
+	db          *sqlx.DB
+)
 
 var _ = Describe("Runner", func() {
 	Describe("Run", func() {
@@ -74,9 +76,9 @@ var _ = Describe("Runner", func() {
 
 		Context("with uuid table", func() {
 			It("should read", func() {
-				runner.cfg.Db.Cursor.Default = "00000000-0000-7300-8f14-e6ee9ef0c3f1"
-				runner.cfg.Db.Cursor.Type = "uuid"
-				runner.cfg.Db.SelectQuery = `
+				runner.cfg.DB.Cursor.Default = "00000000-0000-7300-8f14-e6ee9ef0c3f1"
+				runner.cfg.DB.Cursor.Type = "uuid"
+				runner.cfg.DB.SelectQuery = `
 					SELECT MAX(id::text) as id, partition_key::text
 					FROM uuid_table WHERE id > $1
 					GROUP BY partition_key`
@@ -108,13 +110,13 @@ func expectRedisValuesNotFound(ctx context.Context, keys ...string) {
 
 func insert(table string, id, partitionKey any) {
 	query := fmt.Sprintf("INSERT INTO %s (id, partition_key) VALUES ($1, $2) ON CONFLICT DO NOTHING", table)
-	_, err := db.Queryx(query, id, partitionKey)
+	_, err := db.Queryx(query, id, partitionKey) //nolint:sqlclosecheck
 	Expect(err).NotTo(HaveOccurred())
 }
 
 func deleteFrom(table string, id any) {
 	query := fmt.Sprintf("DELETE FROM %s WHERE id >= $1", table)
-	_, err := db.Queryx(query, id)
+	_, err := db.Queryx(query, id) //nolint:sqlclosecheck
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -127,13 +129,15 @@ var _ = BeforeSuite(func() {
 
 	err := cleanenv.ReadEnv(&cfg)
 	Expect(err).NotTo(HaveOccurred())
-	cfg.Db.SelectQuery = "SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"
+	cfg.DB.SelectQuery = "SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"
 	cfg.PollDelay = 0
 
-	db, err = sqlx.Connect(cfg.Db.DriverName, cfg.Db.ConnectionString)
+	connString, err := cfg.DB.BuildConnectionString()
+	Expect(err).NotTo(HaveOccurred())
+	db, err = sqlx.Connect(cfg.DB.DriverName, connString)
 	Expect(err).NotTo(HaveOccurred())
 
-	opts, err := redis.ParseURL("redis://localhost:6379")
+	opts, err := cfg.Redis.ClientOptions()
 	Expect(err).NotTo(HaveOccurred())
 
 	redisClient = redis.NewClient(opts)

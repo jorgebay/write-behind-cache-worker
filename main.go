@@ -43,17 +43,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	db, err := sqlx.Connect(cfg.Db.DriverName, cfg.Db.ConnectionString)
+	dbConnString, err := cfg.DB.BuildConnectionString()
 	if err != nil {
-		logger.Fatal("unable to connect to db", zap.Error(err))
+		logger.Fatal("unable to build db connection string", zap.Error(err))
+	}
+	db, err := sqlx.Connect(cfg.DB.DriverName, dbConnString)
+	if err != nil {
+		logger.Fatal("unable to connect to db", zap.Error(err), zap.Any("db_options", cfg.DB))
 	}
 	defer db.Close()
 
 	logger.Info("connected to db")
 
-	opts, err := redis.ParseURL(cfg.Redis.URL)
+	opts, err := cfg.Redis.ClientOptions()
 	if err != nil {
-		logger.Fatal("unable to parse redis url", zap.Error(err))
+		logger.Fatal("unable to build redis url", zap.Error(err), zap.Any("redis_options", cfg.Redis))
 	}
 
 	client := redis.NewClient(opts)

@@ -2,11 +2,13 @@ package config
 
 import (
 	"cmp"
+	"crypto/tls"
 	"fmt"
 	"regexp"
 	"strconv"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -14,24 +16,44 @@ var parameterRegex = regexp.MustCompile(`\$\{(.+?)\}`)
 
 type Config struct {
 	Redis     RedisConfig   `yaml:"redis" env-prefix:"WORKER_REDIS_"`
-	Db        DbConfig      `yaml:"db" env-prefix:"WORKER_DB_"`
+	DB        DBConfig      `yaml:"db" env-prefix:"WORKER_DB_"`
 	PollDelay time.Duration `yaml:"pollDelay" env:"WORKER_POLL_DELAY" env-default:"2s"`
 	Debug     bool          `yaml:"debug" env:"WORKER_DEBUG" env-default:"false"`
 	BatchSize int           `yaml:"batchSize" env:"WORKER_BATCH_SIZE" env-default:"200"`
 }
 
-type DbConfig struct {
-	ConnectionString string       `yaml:"connectionString" env:"CONNECTION_STRING" env-default:"host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"` //revive:disable
+type DBConfig struct {
+	ConnectionString string       `yaml:"connectionString" env:"CONNECTION_STRING"`
 	DriverName       string       `yaml:"driverName" env:"DRIVER_NAME" env-default:"postgres"`
-	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY" env-default:"SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"` //revive:disable
+	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY" env-default:"SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"` //nolint:lll
 	Cursor           CursorConfig `yaml:"cursor" env-prefix:"CURSOR_"`
+	Host             string       `yaml:"host" env:"HOST" env-default:"localhost"`
+	Port             int          `yaml:"port" env:"PORT" env-default:"5432"`
+	User             string       `yaml:"user" env:"USER" env-default:"postgres"`
+	Password         string       `yaml:"password" env:"PASSWORD" env-default:"postgres"`
+	DBName           string       `yaml:"dbName" env:"DBNAME" env-default:"postgres"`
+	TLS              DBTLSConfig  `yaml:"tls"`
+}
+
+type DBTLSConfig struct {
+	Mode     string `yaml:"mode" env:"MODE" env-default:"disable"`
+	RootCert string `yaml:"rootCert" env:"ROOTCERT"`
 }
 
 type RedisConfig struct {
-	URL       string `yaml:"url" env:"URL" env-default:"redis://localhost:6379"`
-	Key       string `yaml:"key" env:"KEY" env-default:"my-worker:${partition_key}:key"`
-	Value     string `yaml:"value" env:"VALUE" env-default:"${id}"`
-	CursorKey string `yaml:"cursorKey" env:"CURSOR_KEY" env-default:"my-worker:latest"`
+	URL       string         `yaml:"url" env:"URL"`
+	Host      string         `yaml:"host" env:"HOST" env-default:"localhost"`
+	Port      int            `yaml:"port" env:"PORT" env-default:"6379"`
+	User      string         `yaml:"user" env:"USER"`
+	Password  string         `yaml:"password" env:"PASSWORD"`
+	TLS       RedisTLSConfig `yaml:"tls"`
+	Key       string         `yaml:"key" env:"KEY" env-default:"my-worker:${partition_key}:key"`
+	Value     string         `yaml:"value" env:"VALUE" env-default:"${id}"`
+	CursorKey string         `yaml:"cursorKey" env:"CURSOR_KEY" env-default:"my-worker:latest"`
+}
+
+type RedisTLSConfig struct {
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify" env:"INSECURE_SKIP_VERIFY" env-default:"false"`
 }
 
 type CursorConfig struct {
@@ -40,10 +62,51 @@ type CursorConfig struct {
 	Default string `yaml:"default" env:"DEFAULT" env-default:"-1"`
 }
 
-type ComparatorFunc func(a, b any) (int, error)
-type ConvertFunc func(value string) (any, error)
-type KeyFunc func(row map[string]any) string
-type ValueFunc func(row map[string]any) any
+type (
+	ComparatorFunc func(a, b any) (int, error)
+	ConvertFunc    func(value string) (any, error)
+	KeyFunc        func(row map[string]any) string
+	ValueFunc      func(row map[string]any) any
+)
+
+func (c *DBConfig) BuildConnectionString() (string, error) {
+	if c.ConnectionString != "" {
+		return c.ConnectionString, nil
+	}
+
+	if c.DriverName != "postgres" {
+		return "", fmt.Errorf("unsupported driver to build the connection string: %s", c.DriverName)
+	}
+
+	result := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		c.Host, c.Port, c.User, c.Password, c.DBName, c.TLS.Mode)
+
+	if c.TLS.RootCert != "" {
+		result += fmt.Sprintf(" sslrootcert=%s", c.TLS.RootCert)
+	}
+
+	return result, nil
+}
+
+func (c *RedisConfig) ClientOptions() (*redis.Options, error) {
+	if c.URL != "" {
+		return redis.ParseURL(c.URL)
+	}
+
+	opts := &redis.Options{
+		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
+		Username: c.User,
+		Password: c.Password,
+	}
+
+	if c.TLS.InsecureSkipVerify {
+		opts.TLSConfig = &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec
+		}
+	}
+
+	return opts, nil
+}
 
 func (c *RedisConfig) KeyFn(logger *zap.Logger) (KeyFunc, error) {
 	formatString, columnNames, err := parseColumns(c.Key)
