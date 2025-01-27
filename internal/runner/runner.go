@@ -46,7 +46,7 @@ func (r *Runner) cursorValue(ctx context.Context, cursorInfo *config.CursorInfo)
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	cursorInfo, err := r.cfg.Db.Cursor.Info()
+	cursorInfo, err := r.cfg.DB.Cursor.Info()
 	if err != nil {
 		return err
 	}
@@ -108,11 +108,12 @@ func (r *Runner) runOnce(
 	}
 
 	r.logger.Debug("running db query", zap.Any("cursorValue", cursorValue))
-	rows, err := r.db.QueryxContext(ctx, r.cfg.Db.SelectQuery, cursorValue)
+	rows, err := r.db.QueryxContext(ctx, r.cfg.DB.SelectQuery, cursorValue) //nolint:sqlclosecheck
 	if err != nil {
-		r.logger.Error("unable to query db", zap.Error(err), zap.String("query", r.cfg.Db.SelectQuery))
+		r.logger.Error("unable to query db", zap.Error(err), zap.String("query", r.cfg.DB.SelectQuery))
 		return err
 	}
+
 	defer rows.Close()
 
 	totalRows := 0
@@ -174,9 +175,9 @@ func shouldStopFn(ctx context.Context) func(uint64) bool {
 			panic("invalid max iterations")
 		}
 
-		max := uint64(maxIterationsInt)
+		m := uint64(maxIterationsInt)
 		return func(i uint64) bool {
-			return i >= max
+			return i >= m
 		}
 	}
 

@@ -42,7 +42,7 @@ func Load(filename string) (*Config, bool, error) {
 }
 
 func validate(c *Config) error {
-	if limitRegex.MatchString(c.Db.SelectQuery) {
+	if limitRegex.MatchString(c.DB.SelectQuery) {
 		return errors.New("select query should not contain LIMIT")
 	}
 
@@ -50,7 +50,7 @@ func validate(c *Config) error {
 		return errors.New("batch size should be greater than 0")
 	}
 
-	c.Db.SelectQuery += fmt.Sprintf(" LIMIT %d", c.BatchSize)
+	c.DB.SelectQuery += fmt.Sprintf(" LIMIT %d", c.BatchSize)
 
 	return nil
 }

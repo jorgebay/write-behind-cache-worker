@@ -46,5 +46,4 @@ LABEL orgs.opencontainers.image.created="$BUILD_DATETIME" \
       orgs.opencontainers.image.revision="$GIT_COMMIT_HASH" \
       orgs.opencontainers.image.title="Write-Behind Cache Worker" \
       orgs.opencontainers.image.description="A worker that reads from a backing SQL store and caches into Redis using write-behind strategy" \
-      orgs.opencontainers.image.base.digest="$BASE_DIGEST" \
       orgs.opencontainers.image.base.name="$BASE_IMAGE"
