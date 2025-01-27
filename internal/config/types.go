@@ -32,7 +32,7 @@ type DBConfig struct {
 	User             string       `yaml:"user" env:"USER" env-default:"postgres"`
 	Password         string       `yaml:"password" env:"PASSWORD" env-default:"postgres"`
 	DBName           string       `yaml:"dbName" env:"DBNAME" env-default:"postgres"`
-	TLS              DBTLSConfig  `yaml:"tls"`
+	TLS              DBTLSConfig  `yaml:"tls" env:"TLS"`
 }
 
 type DBTLSConfig struct {
@@ -46,7 +46,7 @@ type RedisConfig struct {
 	Port      int            `yaml:"port" env:"PORT" env-default:"6379"`
 	User      string         `yaml:"user" env:"USER"`
 	Password  string         `yaml:"password" env:"PASSWORD"`
-	TLS       RedisTLSConfig `yaml:"tls"`
+	TLS       RedisTLSConfig `yaml:"tls" env:"TLS"`
 	Key       string         `yaml:"key" env:"KEY" env-default:"my-worker:${partition_key}:key"`
 	Value     string         `yaml:"value" env:"VALUE" env-default:"${id}"`
 	CursorKey string         `yaml:"cursorKey" env:"CURSOR_KEY" env-default:"my-worker:latest"`
