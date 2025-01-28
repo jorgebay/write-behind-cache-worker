@@ -2,8 +2,7 @@ ARG BASE_IMAGE="alpine:3.20"
 
 FROM golang:1.23.4-alpine3.20 AS build
 
-RUN apk update && \
-  apk add build-base git
+RUN apk update && apk add build-base git
 
 WORKDIR /worker
 
