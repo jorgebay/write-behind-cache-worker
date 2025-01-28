@@ -49,7 +49,8 @@ func main() {
 	}
 	db, err := sqlx.Connect(cfg.DB.DriverName, dbConnString)
 	if err != nil {
-		logger.Fatal("unable to connect to db", zap.Error(err), zap.Any("db_options", cfg.DB))
+		logger.Fatal("unable to connect to db", zap.Error(err),
+			zap.String("host", cfg.DB.Host), zap.Any("TLS", cfg.DB.TLS))
 	}
 	defer db.Close()
 
@@ -57,13 +58,13 @@ func main() {
 
 	opts, err := cfg.Redis.ClientOptions()
 	if err != nil {
-		logger.Fatal("unable to build redis url", zap.Error(err), zap.Any("redis_options", cfg.Redis))
+		logger.Fatal("unable to build redis url", zap.Error(err))
 	}
 
 	client := redis.NewClient(opts)
 	redisStatus := client.Ping(ctx)
 	if redisStatus.Err() != nil {
-		logger.Fatal("unable to connect to redis", zap.Error(redisStatus.Err()))
+		logger.Fatal("unable to connect to redis", zap.Error(redisStatus.Err()), zap.String("host", cfg.Redis.Host))
 	}
 
 	logger.Info("connected to redis")
