@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -45,6 +46,10 @@ var _ = Describe("Runner", func() {
 
 				expectRedisValues(ctx, "my-worker:1000:key", "2")
 				expectRedisValues(ctx, "my-worker:2000:key", "3")
+
+				result, err := redisClient.Get(ctx, "my-worker:writer-timestamp").Int()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result).To(BeNumerically("~", time.Now().Unix(), 2))
 			})
 
 			It("should continue from the cached cursor value", func() {
@@ -131,6 +136,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	cfg.DB.SelectQuery = "SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"
 	cfg.PollDelay = 0
+	cfg.Redis.TimestampKey = "my-worker:writer-timestamp"
 
 	connString, err := cfg.DB.BuildConnectionString()
 	Expect(err).NotTo(HaveOccurred())

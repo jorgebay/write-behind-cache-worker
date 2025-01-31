@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -149,6 +150,12 @@ func (r *Runner) runOnce(
 		totalRows++
 	}
 
+	pipelineHasChanges := false
+	if r.cfg.Redis.TimestampKey != "" {
+		redisPipeline.Set(ctx, r.cfg.Redis.TimestampKey, strconv.FormatInt(time.Now().Unix(), 10), 0)
+		pipelineHasChanges = true
+	}
+
 	if totalRows > 0 {
 		r.logger.Info("processed rows", zap.Int("rows", totalRows))
 		if totalRows == r.cfg.BatchSize {
@@ -158,8 +165,11 @@ func (r *Runner) runOnce(
 
 		r.logger.Debug("setting cursor", zap.Any("cursorValue", cursorValue))
 		redisPipeline.Set(ctx, r.cfg.Redis.CursorKey, fmt.Sprint(cursorValue), 0)
-		_, err := redisPipeline.Exec(ctx)
-		if err != nil {
+		pipelineHasChanges = true
+	}
+
+	if pipelineHasChanges {
+		if _, err := redisPipeline.Exec(ctx); err != nil {
 			return fmt.Errorf("unable to execute pipeline: %w", err)
 		}
 	}
