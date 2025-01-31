@@ -14,6 +14,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var configFlag = flag.String("c", "config.yaml", "help message for flag n")
@@ -30,7 +31,9 @@ func main() {
 	if cfg.Debug {
 		logger, err = zap.NewDevelopment()
 	} else {
-		logger, err = zap.NewProduction()
+		loggerConfig := zap.NewProductionConfig()
+		loggerConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+		logger, err = loggerConfig.Build()
 	}
 	if err != nil {
 		panic(err)
