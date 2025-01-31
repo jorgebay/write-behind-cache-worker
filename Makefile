@@ -24,7 +24,7 @@ lint:
 
 .PHONY: build
 build:
-	go build
+	go build .
 
 .PHONY: install-tools
 GOLANGCI_LINT_VERSION=v1.61.0
