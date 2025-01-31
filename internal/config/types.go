@@ -23,6 +23,8 @@ type Config struct {
 }
 
 type DBConfig struct {
+	// ConnectionString is the full connection string to the database. If ConnectionString is provided, the other fields
+	// are ignored.
 	ConnectionString string       `yaml:"connectionString" env:"CONNECTION_STRING"`
 	DriverName       string       `yaml:"driverName" env:"DRIVER_NAME" env-default:"postgres"`
 	SelectQuery      string       `yaml:"selectQuery" env:"SELECT_QUERY" env-default:"SELECT MAX(id) as id, partition_key FROM sample_table WHERE id > $1 GROUP BY partition_key"` //nolint:lll
@@ -41,6 +43,7 @@ type DBTLSConfig struct {
 }
 
 type RedisConfig struct {
+	// URL is the connection string to the redis server. If URL is provided, the other fields are ignored.
 	URL       string         `yaml:"url" env:"URL"`
 	Host      string         `yaml:"host" env:"HOST" env-default:"localhost"`
 	Port      int            `yaml:"port" env:"PORT" env-default:"6379"`
@@ -50,6 +53,10 @@ type RedisConfig struct {
 	Key       string         `yaml:"key" env:"KEY" env-default:"my-worker:${partition_key}:key"`
 	Value     string         `yaml:"value" env:"VALUE" env-default:"${id}"`
 	CursorKey string         `yaml:"cursorKey" env:"CURSOR_KEY" env-default:"my-worker:latest"`
+
+	// TimestampKey is the key to store the timestamp that periodically gets written into redis to mark that the
+	// worker is alive and processing rows (every worker poll).
+	TimestampKey string `yaml:"timestampKey" env:"WRITER_TIMESTAMP_KEY"`
 }
 
 type RedisTLSConfig struct {

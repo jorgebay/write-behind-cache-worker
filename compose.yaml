@@ -1,5 +1,3 @@
-version: '3.5'
-
 # Services for testing and running the application locally
 services:
   redis:
